@@ -1006,470 +1006,580 @@ def main():
 # =============================================================================
 # TAB RENDERERS
 # =============================================================================
-
-def render_documents_tab(T: dict):
-    """Render documents management tab"""
-    st.subheader(T["upload"])
+def render_agents_tab(T: dict):
+    """Render agent workflows tab"""
+    st.subheader(T["agents"])
     
+    # Load or create agents configuration
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        uploaded_files = st.file_uploader(
-            T["upload_hint"],
-            type=["pdf", "txt", "md", "csv", "json"],
-            accept_multiple_files=True
+        # Upload agents.yaml
+        uploaded_yaml = st.file_uploader(
+            "📤 Upload agents.yaml",
+            type=["yaml", "yml"],
+            key="agents_yaml_upload"
         )
         
-        if uploaded_files:
-            for file in uploaded_files:
-                doc_id = f"{file.name}_{hash_content(file.name)}_{int(time.time())}"
-                
-                # Check if already added
-                if any(d["id"] == doc_id for d in st.session_state.docs):
-                    continue
-                
-                ext = file.name.lower().split(".")[-1]
-                doc = {
-                    "id": doc_id,
-                    "name": file.name,
-                    "type": ext,
-                    "timestamp": datetime.now().isoformat(),
-                    "content": "",
-                    "pdf_bytes": None,
-                    "images": None
-                }
-                
-                if ext == "pdf":
-                    doc["pdf_bytes"] = file.read()
-                else:
-                    doc["content"] = extract_text_from_file(file)
-                
-                st.session_state.docs.append(doc)
-                st.session_state.metrics["docs_processed"] = len(st.session_state.docs)
-            
-            render_status("success", f"Added {len(uploaded_files)} document(s)")
+        if uploaded_yaml:
+            yaml_content = uploaded_yaml.read().decode("utf-8")
+            st.session_state.agents_yaml = yaml_content
+            try:
+                agents_config = yaml.safe_load(yaml_content)
+                st.session_state.agents = agents_config.get("agents", [])
+                render_status("success", f"Loaded {len(st.session_state.agents)} agents")
+            except Exception as e:
+                render_status("error", f"YAML parse error: {str(e)}")
     
     with col2:
-        st.markdown("### 📝 " + T["paste"])
-        paste_text = st.text_area(T["paste"], height=200, key="paste_input")
-        
-        if st.button(T["add_paste"], use_container_width=True):
-            if paste_text.strip():
-                doc_id = f"paste_{hash_content(paste_text)}_{int(time.time())}"
-                doc = {
-                    "id": doc_id,
-                    "name": f"Pasted Text {len(st.session_state.docs)+1}",
-                    "type": "txt",
-                    "timestamp": datetime.now().isoformat(),
-                    "content": paste_text,
-                    "pdf_bytes": None,
-                    "images": None
-                }
-                st.session_state.docs.append(doc)
-                st.session_state.metrics["docs_processed"] = len(st.session_state.docs)
-                render_status("success", "Pasted text added")
-    
-    # Document list
-    st.markdown("---")
-    st.subheader(f"📚 {T['docs']} ({len(st.session_state.docs)})")
-    
-    for idx, doc in enumerate(st.session_state.docs):
-        with st.expander(f"📄 {doc['name']}", expanded=False):
-            col1, col2, col3 = st.columns([3, 1, 1])
-            
-            with col1:
-                st.markdown(f"**Type:** {doc['type'].upper()}")
-                st.markdown(f"**Added:** {doc['timestamp'][:19]}")
-            
-            with col2:
-                if doc["type"] == "pdf" and doc["pdf_bytes"]:
-                    if st.button(T["preview"], key=f"preview_{doc['id']}"):
-                        if doc["images"] is None:
-                            with st.spinner(T["loading"]):
-                                doc["images"] = pdf_to_images(doc["pdf_bytes"])
-                        render_status("success", f"Rendered {len(doc['images'])} pages")
-            
-            with col3:
-                if st.button(T["delete"], key=f"delete_{doc['id']}", type="secondary"):
-                    st.session_state.docs.pop(idx)
-                    st.session_state.metrics["docs_processed"] = len(st.session_state.docs)
-                    st.rerun()
-            
-            # Show content or images
-            if doc["type"] == "pdf" and doc.get("images"):
-                cols = st.columns(4)
-                for i, page_data in enumerate(doc["images"][:8]):  # Show first 8 pages
-                    with cols[i % 4]:
-                        st.image(page_data["image"], caption=f"{T['page']} {page_data['page']}", use_container_width=True)
-            elif doc["content"]:
-                content = st.text_area(
-                    T["edit"],
-                    value=doc["content"],
-                    height=200,
-                    key=f"edit_{doc['id']}"
-                )
-                doc["content"] = content
-
-def render_ocr_tab(T: dict):
-    """Render OCR processing tab"""
-    st.subheader(T["ocr"])
-    
-    pdf_docs = [d for d in st.session_state.docs if d["type"] == "pdf"]
-    
-    if not pdf_docs:
-        st.info("📄 Please upload PDF documents in the Documents tab first")
-        return
-    
-    for doc in pdf_docs:
-        with st.expander(f"📄 {doc['name']}", expanded=True):
-            # Render pages if not done
-            if doc["images"] is None and doc["pdf_bytes"]:
-                if st.button(f"🖼️ Render Pages", key=f"render_{doc['id']}"):
-                    with st.spinner(T["loading"]):
-                        doc["images"] = pdf_to_images(doc["pdf_bytes"])
-                    render_status("success", f"Rendered {len(doc['images'])} pages")
-            
-            if doc.get("images"):
-                # OCR settings
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    ocr_mode = st.radio(
-                        T["ocr_mode"],
-                        [T["ocr_python"], T["ocr_llm"]],
-                        key=f"ocr_mode_{doc['id']}"
-                    )
-                
-                with col2:
-                    ocr_lang = st.selectbox(
-                        T["ocr_lang"],
-                        ["English", "Traditional Chinese"],
-                        index=1 if st.session_state.settings["ocr_language"] == "zh" else 0,
-                        key=f"ocr_lang_{doc['id']}"
-                    )
-                
-                with col3:
-                    if ocr_mode == T["ocr_llm"]:
-                        llm_model = st.selectbox(
-                            "LLM Model",
-                            [
-                                "gemini:gemini-2.5-flash",
-                                "gemini:gemini-2.5-flash-lite",
-                                "openai:gpt-4o-mini",
-                                "openai:gpt-4-turbo"
-                            ],
-                            key=f"llm_model_{doc['id']}"
-                        )
-                
-                # Page selection
-                page_nums = [p["page"] for p in doc["images"]]
-                selected_pages = st.multiselect(
-                    "Select pages for OCR",
-                    page_nums,
-                    default=page_nums[:min(5, len(page_nums))],
-                    key=f"pages_{doc['id']}"
-                )
-                
-                # Run OCR
-                if st.button(T["run_ocr"], key=f"run_ocr_{doc['id']}", type="primary"):
-                    lang_code = "zh" if "Chinese" in ocr_lang else "en"
-                    
-                    with st.status("🔍 Processing OCR...", expanded=True) as status:
-                        start_time = time.time()
-                        router = LLMRouter(
-                            google_key=st.session_state.api_keys["gemini"],
-                            openai_key=st.session_state.api_keys["openai"],
-                            grok_key=st.session_state.api_keys["grok"]
-                        )
-                        
-                        for page_data in doc["images"]:
-                            if page_data["page"] not in selected_pages:
-                                continue
-                            
-                            st.write(f"Processing page {page_data['page']}...")
-                            
-                            if ocr_mode == T["ocr_python"]:
-                                text = python_ocr(
-                                    page_data["image"],
-                                    engine=st.session_state.settings["ocr_engine"],
-                                    language=lang_code
-                                )
-                            else:
-                                provider, model = llm_model.split(":")
-                                prompt = ADVANCED_PROMPTS["ocr"].format(
-                                    language="Traditional Chinese" if lang_code == "zh" else "English"
-                                )
-                                image_bytes = img_to_bytes(page_data["image"])
-                                text = router.ocr_image(provider, model, image_bytes, prompt)
-                            
-                            st.session_state.ocr_results[(doc["id"], page_data["page"])] = text
-                        
-                        elapsed = time.time() - start_time
-                        st.session_state.metrics["pages_ocr"] += len(selected_pages)
-                        st.session_state.metrics["processing_times"].append(elapsed)
-                        
-                        status.update(label="✓ OCR Complete", state="complete")
-                        render_status("success", f"Processed {len(selected_pages)} pages in {elapsed:.2f}s")
-                
-                # Show OCR results
-                if any((doc["id"], p) in st.session_state.ocr_results for p in page_nums):
-                    st.markdown("### OCR Results")
-                    for page_num in selected_pages:
-                        key = (doc["id"], page_num)
-                        if key in st.session_state.ocr_results:
-                            text = st.text_area(
-                                f"{T['page']} {page_num}",
-                                value=st.session_state.ocr_results[key],
-                                height=200,
-                                key=f"ocr_result_{doc['id']}_{page_num}"
-                            )
-                            st.session_state.ocr_results[key] = text
-
-def render_combine_tab(T: dict):
-    """Render combine and analyze tab"""
-    st.subheader(T["combine"])
-    
-    # Build combined document
-    combined_parts = []
-    
-    for doc in st.session_state.docs:
-        if doc["type"] == "pdf":
-            # Collect OCR results
-            ocr_texts = []
-            if doc.get("images"):
-                for page_data in doc["images"]:
-                    key = (doc["id"], page_data["page"])
-                    if key in st.session_state.ocr_results:
-                        ocr_texts.append(f"### {T['page']} {page_data['page']}\n\n{st.session_state.ocr_results[key]}")
-            
-            if ocr_texts:
-                combined_parts.append(f"## {doc['name']}\n\n" + "\n\n".join(ocr_texts))
-        else:
-            if doc["content"]:
-                combined_parts.append(f"## {doc['name']}\n\n{doc['content']}")
-    
-    # Keyword extraction
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        if st.button(T["auto_extract"], use_container_width=True):
-            full_text = "\n\n".join(combined_parts)
-            lang = "zh" if st.session_state.settings["lang"] == "zh-TW" else "en"
-            keywords = extract_keywords_yake(full_text, max_k=30, language=lang)
-            st.session_state.keywords = keywords
-            render_status("success", f"Extracted {len(keywords)} keywords")
-    
-    with col2:
-        if st.button(T["generate_combined"], type="primary", use_container_width=True):
-            combined_text = "\n\n---\n\n".join(combined_parts)
-            
-            # Highlight keywords
-            if st.session_state.keywords:
-                theme_color = FLOWER_THEMES[st.session_state.settings["theme_idx"]][1]
-                combined_text = highlight_keywords(combined_text, st.session_state.keywords, theme_color)
-            
-            st.session_state.combined_doc = combined_text
-            st.session_state.metrics["total_tokens"] = estimate_tokens(combined_text)
-            st.balloons()
-            render_status("success", "Combined document generated")
-    
-    # Show/edit keywords
-    if st.session_state.keywords or st.session_state.combined_doc:
-        st.markdown("### " + T["keywords"])
-        keywords_text = st.text_area(
-            "Edit keywords (one per line)",
-            value="\n".join(st.session_state.keywords),
-            height=150
-        )
-        st.session_state.keywords = [k.strip() for k in keywords_text.split("\n") if k.strip()]
-        
-        # Display as tags
-        if st.session_state.keywords:
-            tags_html = "".join([f"<span class='tag'>{kw}</span>" for kw in st.session_state.keywords[:20]])
-            st.markdown(tags_html, unsafe_allow_html=True)
-    
-    # Display combined document
-    if st.session_state.combined_doc:
-        st.markdown("---")
-        st.markdown("### " + T["combined_doc"])
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown(st.session_state.combined_doc, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Export options
-        col1, col2, col3 = st.columns(3)
-        with col1:
+        # Download agents.yaml
+        if st.session_state.agents_yaml:
             st.download_button(
-                "📥 Download Markdown",
-                data=st.session_state.combined_doc,
-                file_name=f"combined_document_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                mime="text/markdown"
+                "📥 Download agents.yaml",
+                data=st.session_state.agents_yaml,
+                file_name=f"agents_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yaml",
+                mime="text/yaml",
+                use_container_width=True
             )
-
-def render_wordgraph_tab(T: dict):
-    """Render word graph analysis tab"""
-    st.subheader(T["wordgraph"])
     
-    if not st.session_state.combined_doc:
-        st.info("Please generate a combined document first in the Combine tab")
+    # Agent YAML editor
+    st.markdown("### 📝 Agent Configuration Editor")
+    agents_yaml_text = st.text_area(
+        "Edit agents.yaml (Traditional Chinese)",
+        value=st.session_state.agents_yaml,
+        height=300,
+        help="Define agents in YAML format. Each agent should have: name, description, system_prompt, and optional parameters."
+    )
+    
+    if agents_yaml_text != st.session_state.agents_yaml:
+        st.session_state.agents_yaml = agents_yaml_text
+        try:
+            agents_config = yaml.safe_load(agents_yaml_text)
+            st.session_state.agents = agents_config.get("agents", [])
+        except:
+            pass
+    
+    if not st.session_state.agents:
+        st.info("📋 Please upload or define agents in YAML format above")
         return
     
-    # Clean text (remove HTML tags)
-    clean_text = re.sub(r'<[^>]+>', '', st.session_state.combined_doc)
+    st.markdown("---")
     
-    # Analysis options
+    # Agent selection and execution
+    st.markdown("### 🤖 Agent Execution Pipeline")
+    
+    # Select agents to run
+    agent_names = [agent.get("name", f"Agent {i+1}") for i, agent in enumerate(st.session_state.agents)]
+    selected_agent_names = st.multiselect(
+        T["select_agents"],
+        agent_names,
+        default=agent_names[:3] if len(agent_names) >= 3 else agent_names
+    )
+    
+    selected_agents = [agent for agent in st.session_state.agents 
+                      if agent.get("name") in selected_agent_names]
+    
+    # Input document for agents
+    st.markdown("### 📄 Input Document")
+    
+    input_source = st.radio(
+        "Input Source",
+        ["Paste New Text", "Use Combined Document", "Previous Agent Output"],
+        horizontal=True
+    )
+    
+    if input_source == "Paste New Text":
+        agent_input_doc = st.text_area(
+            "Paste document content (text, markdown, json, csv)",
+            height=200,
+            placeholder="Paste your document here..."
+        )
+    elif input_source == "Use Combined Document":
+        agent_input_doc = re.sub(r'<[^>]+>', '', st.session_state.combined_doc)
+        st.info(f"Using combined document ({estimate_tokens(agent_input_doc)} tokens)")
+    else:
+        if st.session_state.agent_results:
+            last_result = st.session_state.agent_results[-1]
+            agent_input_doc = last_result.get("output", "")
+            st.info(f"Using output from: {last_result.get('agent_name', 'Previous Agent')}")
+        else:
+            agent_input_doc = ""
+            st.warning("No previous agent output available")
+    
+    # Display selected agents workflow
+    if selected_agents:
+        st.markdown("### 🔄 Agent Workflow")
+        st.markdown("<div class='agent-workflow'>", unsafe_allow_html=True)
+        
+        for idx, agent in enumerate(selected_agents):
+            agent_name = agent.get("name", f"Agent {idx+1}")
+            agent_desc = agent.get("description", "No description")
+            
+            st.markdown(f"""
+                <div class='agent-step'>
+                    <div style='font-weight: 600; font-size: 1.1rem; margin-bottom: 0.5rem;'>
+                        {idx+1}. {agent_name}
+                    </div>
+                    <div style='opacity: 0.8; font-size: 0.9rem;'>
+                        {agent_desc}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Execution controls
+    st.markdown("---")
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        top_n = st.slider("Number of top words", 10, 100, 30)
+        execution_mode = st.radio(
+            "Execution Mode",
+            ["Sequential (One-by-One)", "Batch (All at Once)"],
+            help="Sequential: Execute agents one by one with manual review. Batch: Execute all selected agents automatically."
+        )
     
     with col2:
-        ngram_size = st.selectbox("N-gram size", [2, 3, 4], index=0)
+        auto_chain = st.checkbox(
+            "Auto-chain outputs",
+            value=True,
+            help="Use each agent's output as input for the next agent"
+        )
     
     with col3:
-        if st.button("🔄 Refresh Analysis", use_container_width=True):
+        clear_results = st.button("🗑️ Clear Results", use_container_width=True)
+        if clear_results:
+            st.session_state.agent_results = []
             st.rerun()
     
-    # Word Frequency Analysis
-    st.markdown("### " + T["word_freq"])
-    word_freq_df = create_word_frequency(clean_text, top_n=top_n)
+    # Execute agents
+    if execution_mode == "Sequential (One-by-One)":
+        render_sequential_execution(selected_agents, agent_input_doc, auto_chain, T)
+    else:
+        render_batch_execution(selected_agents, agent_input_doc, auto_chain, T)
     
-    col1, col2 = st.columns([2, 1])
+    # Display results
+    if st.session_state.agent_results:
+        st.markdown("---")
+        st.markdown("### 📊 Agent Results")
+        
+        for idx, result in enumerate(st.session_state.agent_results):
+            with st.expander(f"✓ {result['agent_name']} - {result['timestamp'][:19]}", expanded=idx == len(st.session_state.agent_results) - 1):
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.markdown(f"**Model:** {result['model']}")
+                    st.markdown(f"**Execution Time:** {result['execution_time']:.2f}s")
+                    st.markdown(f"**Tokens:** ~{result['tokens']}")
+                
+                with col2:
+                    if st.button("📋 Copy", key=f"copy_{idx}"):
+                        st.code(result['output'], language="markdown")
+                
+                # Editable output
+                edited_output = st.text_area(
+                    "Output (editable - will be used as input for next agent if auto-chain is enabled)",
+                    value=result['output'],
+                    height=300,
+                    key=f"output_{idx}"
+                )
+                result['output'] = edited_output
+                
+                # Show follow-up questions if available
+                if result.get('follow_up_questions'):
+                    st.markdown("**💡 Follow-up Questions:**")
+                    for q in result['follow_up_questions']:
+                        st.markdown(f"- {q}")
+        
+        # Export all results
+        if st.button("📥 Export All Results", use_container_width=True):
+            export_data = {
+                "workflow": [agent.get("name") for agent in selected_agents],
+                "results": st.session_state.agent_results,
+                "timestamp": datetime.now().isoformat()
+            }
+            st.download_button(
+                "Download JSON",
+                data=json.dumps(export_data, ensure_ascii=False, indent=2),
+                file_name=f"agent_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+            )
+
+
+def render_sequential_execution(selected_agents: List[Dict], input_doc: str, auto_chain: bool, T: dict):
+    """Render sequential agent execution interface"""
+    
+    # Track current agent index
+    if "current_agent_idx" not in st.session_state:
+        st.session_state.current_agent_idx = 0
+    
+    if not selected_agents:
+        return
+    
+    current_idx = st.session_state.current_agent_idx
+    
+    if current_idx >= len(selected_agents):
+        st.success("✅ All agents completed!")
+        if st.button("🔄 Restart Workflow"):
+            st.session_state.current_agent_idx = 0
+            st.session_state.agent_results = []
+            st.rerun()
+        return
+    
+    current_agent = selected_agents[current_idx]
+    agent_name = current_agent.get("name", f"Agent {current_idx+1}")
+    
+    st.markdown(f"### 🎯 Current Agent: {agent_name} ({current_idx + 1}/{len(selected_agents)})")
+    
+    with st.expander("Agent Configuration", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Model selection
+            provider_model = st.selectbox(
+                "Select Model",
+                [
+                    "gemini:gemini-2.5-flash",
+                    "gemini:gemini-2.5-flash-lite",
+                    "gemini:gemini-2.5-pro",
+                    "openai:gpt-4o-mini",
+                    "openai:gpt-4.1-mini",
+                    "openai:gpt-5-nano",
+                    "grok:grok-4-fast-reasoning",
+                    "grok:grok-3-mini"
+                ],
+                index=0,
+                key=f"model_{current_idx}"
+            )
+        
+        with col2:
+            temperature = st.slider(
+                "Temperature",
+                0.0, 1.0, 
+                float(current_agent.get("temperature", 0.2)),
+                0.1,
+                key=f"temp_{current_idx}"
+            )
+        
+        # System prompt
+        system_prompt = st.text_area(
+            "System Prompt",
+            value=current_agent.get("system_prompt", ADVANCED_PROMPTS["agent_system"]),
+            height=150,
+            key=f"sys_{current_idx}"
+        )
+        
+        # User prompt template
+        user_prompt_template = st.text_area(
+            "User Prompt Template (use {input} placeholder)",
+            value=current_agent.get("user_prompt", "分析以下文件：\n\n{input}"),
+            height=100,
+            key=f"user_{current_idx}"
+        )
+        
+        max_tokens = st.number_input(
+            "Max Tokens",
+            100, 8000,
+            int(current_agent.get("max_tokens", 2000)),
+            key=f"tokens_{current_idx}"
+        )
+    
+    # Determine input for current agent
+    if auto_chain and st.session_state.agent_results:
+        current_input = st.session_state.agent_results[-1]['output']
+        st.info(f"📥 Input from previous agent: {st.session_state.agent_results[-1]['agent_name']}")
+    else:
+        current_input = input_doc
+    
+    # Preview input
+    with st.expander("Preview Input Document", expanded=False):
+        st.text_area("Input", value=current_input, height=200, disabled=True)
+    
+    # Execute button
+    if st.button(f"▶️ Execute {agent_name}", type="primary", use_container_width=True):
+        if not current_input.strip():
+            render_status("error", "Input document is empty")
+            return
+        
+        with st.status(f"🔄 Executing {agent_name}...", expanded=True) as status:
+            start_time = time.time()
+            
+            router = LLMRouter(
+                google_key=st.session_state.api_keys["gemini"],
+                openai_key=st.session_state.api_keys["openai"],
+                grok_key=st.session_state.api_keys["grok"]
+            )
+            
+            provider, model = provider_model.split(":")
+            user_prompt = user_prompt_template.replace("{input}", current_input)
+            
+            st.write(f"Provider: {provider}, Model: {model}")
+            st.write(f"Input length: {len(current_input)} chars (~{estimate_tokens(current_input)} tokens)")
+            
+            output = router.generate_text(
+                provider=provider,
+                model=model,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            elapsed = time.time() - start_time
+            
+            # Generate follow-up questions
+            follow_up_questions = generate_follow_up_questions(output, current_agent)
+            
+            # Save result
+            result = {
+                "agent_name": agent_name,
+                "agent_description": current_agent.get("description", ""),
+                "model": provider_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "input": current_input[:500] + "..." if len(current_input) > 500 else current_input,
+                "output": output,
+                "tokens": estimate_tokens(output),
+                "execution_time": elapsed,
+                "timestamp": datetime.now().isoformat(),
+                "follow_up_questions": follow_up_questions
+            }
+            
+            st.session_state.agent_results.append(result)
+            st.session_state.metrics["agent_runs"] += 1
+            st.session_state.metrics["total_tokens"] += estimate_tokens(output)
+            st.session_state.metrics["processing_times"].append(elapsed)
+            
+            status.update(label=f"✓ {agent_name} Complete", state="complete")
+            render_status("success", f"Completed in {elapsed:.2f}s")
+        
+        # Move to next agent
+        st.session_state.current_agent_idx += 1
+        st.rerun()
+
+
+def render_batch_execution(selected_agents: List[Dict], input_doc: str, auto_chain: bool, T: dict):
+    """Render batch agent execution interface"""
+    
+    if st.button(f"▶️ Execute All Agents ({len(selected_agents)})", type="primary", use_container_width=True):
+        if not input_doc.strip():
+            render_status("error", "Input document is empty")
+            return
+        
+        router = LLMRouter(
+            google_key=st.session_state.api_keys["gemini"],
+            openai_key=st.session_state.api_keys["openai"],
+            grok_key=st.session_state.api_keys["grok"]
+        )
+        
+        current_input = input_doc
+        
+        with st.status(f"🔄 Executing {len(selected_agents)} agents...", expanded=True) as status:
+            for idx, agent in enumerate(selected_agents):
+                agent_name = agent.get("name", f"Agent {idx+1}")
+                st.write(f"[{idx+1}/{len(selected_agents)}] Executing {agent_name}...")
+                
+                start_time = time.time()
+                
+                # Get model from agent config or use default
+                provider_model = agent.get("model", "gemini:gemini-2.5-flash")
+                provider, model = provider_model.split(":")
+                
+                system_prompt = agent.get("system_prompt", ADVANCED_PROMPTS["agent_system"])
+                user_prompt_template = agent.get("user_prompt", "分析以下文件：\n\n{input}")
+                user_prompt = user_prompt_template.replace("{input}", current_input)
+                
+                temperature = float(agent.get("temperature", 0.2))
+                max_tokens = int(agent.get("max_tokens", 2000))
+                
+                output = router.generate_text(
+                    provider=provider,
+                    model=model,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                
+                elapsed = time.time() - start_time
+                
+                # Generate follow-up questions
+                follow_up_questions = generate_follow_up_questions(output, agent)
+                
+                # Save result
+                result = {
+                    "agent_name": agent_name,
+                    "agent_description": agent.get("description", ""),
+                    "model": provider_model,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "input": current_input[:500] + "..." if len(current_input) > 500 else current_input,
+                    "output": output,
+                    "tokens": estimate_tokens(output),
+                    "execution_time": elapsed,
+                    "timestamp": datetime.now().isoformat(),
+                    "follow_up_questions": follow_up_questions
+                }
+                
+                st.session_state.agent_results.append(result)
+                st.session_state.metrics["agent_runs"] += 1
+                st.session_state.metrics["total_tokens"] += estimate_tokens(output)
+                st.session_state.metrics["processing_times"].append(elapsed)
+                
+                st.write(f"✓ Completed in {elapsed:.2f}s")
+                
+                # Chain output to next agent if enabled
+                if auto_chain:
+                    current_input = output
+            
+            status.update(label="✓ All Agents Complete", state="complete")
+            st.balloons()
+
+
+def generate_follow_up_questions(output: str, agent: Dict) -> List[str]:
+    """Generate follow-up questions based on agent output"""
+    questions = []
+    
+    agent_type = agent.get("name", "").lower()
+    
+    # Pattern-based question generation
+    if "摘要" in agent_type or "summary" in agent_type:
+        questions = [
+            "是否需要更詳細的特定章節摘要？",
+            "有哪些關鍵發現需要進一步分析？",
+            "是否需要對比不同文件的摘要？"
+        ]
+    elif "風險" in agent_type or "risk" in agent_type:
+        questions = [
+            "建議採取哪些風險緩解措施？",
+            "如何量化這些風險的影響？",
+            "是否需要建立風險監控機制？"
+        ]
+    elif "法規" in agent_type or "regulatory" in agent_type:
+        questions = [
+            "是否符合最新的 FDA 指導原則？",
+            "需要準備哪些額外的合規文件？",
+            "建議的法規提交時間表為何？"
+        ]
+    elif "藥物" in agent_type or "drug" in agent_type:
+        questions = [
+            "是否需要更新藥物標籤信息？",
+            "建議進行哪些額外的臨床研究？",
+            "如何優化給藥方案？"
+        ]
+    elif "不良" in agent_type or "adverse" in agent_type:
+        questions = [
+            "這些不良事件的嚴重程度如何？",
+            "是否需要向 FDA 提交安全報告？",
+            "建議採取哪些患者監測措施？"
+        ]
+    else:
+        questions = [
+            "是否需要對此分析進行深入探討？",
+            "有哪些相關的後續研究方向？",
+            "如何將這些發現應用到實際操作中？"
+        ]
+    
+    return questions[:3]
+
+
+def render_dashboard_tab(T: dict):
+    """Render analytics dashboard tab"""
+    st.subheader(T["dashboard"])
+    
+    metrics = st.session_state.metrics
+    
+    # Key metrics
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        fig = px.bar(
-            word_freq_df.head(20),
-            x='Frequency',
-            y='Word',
-            orientation='h',
-            title=f'Top 20 {T["top_words"]}',
-            color='Frequency',
-            color_continuous_scale='Blues'
-        )
-        fig.update_layout(height=600, showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        render_metric_card(T["docs_processed"], metrics["docs_processed"], "📄")
     
     with col2:
-        st.dataframe(word_freq_df, height=600, use_container_width=True)
+        render_metric_card(T["pages_ocr"], metrics["pages_ocr"], "🔍")
     
-    # N-gram Analysis
-    st.markdown(f"### {T['ngram_analysis']} ({ngram_size}-gram)")
-    ngrams = create_ngrams(clean_text, n=ngram_size, top_k=20)
+    with col3:
+        render_metric_card(T["tokens"], f"{metrics['total_tokens']:,}", "🔤")
     
-    if ngrams:
-        ngram_df = pd.DataFrame(ngrams, columns=['N-gram', 'Frequency'])
+    with col4:
+        render_metric_card(T["agent_runs"], metrics["agent_runs"], "🤖")
+    
+    # Processing times chart
+    if metrics["processing_times"]:
+        st.markdown("---")
+        st.markdown("### ⏱️ " + T["processing_time"])
         
-        fig = px.bar(
-            ngram_df,
-            x='Frequency',
-            y='N-gram',
-            orientation='h',
-            title=f'Top 20 {ngram_size}-grams',
-            color='Frequency',
-            color_continuous_scale='Viridis'
+        times_df = pd.DataFrame({
+            "Run": range(1, len(metrics["processing_times"]) + 1),
+            "Time (s)": metrics["processing_times"]
+        })
+        
+        fig = px.line(
+            times_df,
+            x="Run",
+            y="Time (s)",
+            markers=True,
+            title="Processing Time Trend"
         )
-        fig.update_layout(height=500)
         st.plotly_chart(fig, use_container_width=True)
     
-    # Co-occurrence Network
-    if st.session_state.keywords:
-        st.markdown("### " + T["co_occurrence"])
+    # Agent performance
+    if st.session_state.agent_results:
+        st.markdown("---")
+        st.markdown("### 🤖 Agent Performance")
         
-        cooccur_df = create_cooccurrence_matrix(clean_text, st.session_state.keywords, window=10)
+        agent_stats = []
+        for result in st.session_state.agent_results:
+            agent_stats.append({
+                "Agent": result["agent_name"],
+                "Model": result["model"],
+                "Execution Time": result["execution_time"],
+                "Tokens": result["tokens"]
+            })
         
-        if not cooccur_df.empty:
-            # Create network graph
-            edges = []
-            for col in cooccur_df.columns:
-                for idx in cooccur_df.index:
-                    weight = cooccur_df.loc[idx, col]
-                    if weight > 0 and col != idx:
-                        edges.append((idx, col, weight))
-            
-            # Sort by weight and take top connections
-            edges.sort(key=lambda x: x[2], reverse=True)
-            edges = edges[:50]  # Top 50 connections
-            
-            # Create network visualization
-            import plotly.graph_objects as go
-            
-            # Build node positions (circular layout)
-            nodes = list(set([e[0] for e in edges] + [e[1] for e in edges]))
-            n = len(nodes)
-            
-            node_positions = {}
-            for i, node in enumerate(nodes):
-                angle = 2 * np.pi * i / n
-                node_positions[node] = (np.cos(angle), np.sin(angle))
-            
-            # Create edges
-            edge_trace = []
-            for source, target, weight in edges:
-                x0, y0 = node_positions[source]
-                x1, y1 = node_positions[target]
-                
-                trace = go.Scatter(
-                    x=[x0, x1, None],
-                    y=[y0, y1, None],
-                    mode='lines',
-                    line=dict(width=weight/max(e[2] for e in edges)*5, color='#888'),
-                    hoverinfo='none',
-                    showlegend=False
-                )
-                edge_trace.append(trace)
-            
-            # Create nodes
-            node_x = [node_positions[node][0] for node in nodes]
-            node_y = [node_positions[node][1] for node in nodes]
-            
-            node_trace = go.Scatter(
-                x=node_x,
-                y=node_y,
-                mode='markers+text',
-                text=nodes,
-                textposition="top center",
-                hoverinfo='text',
-                marker=dict(
-                    size=20,
-                    color=FLOWER_THEMES[st.session_state.settings["theme_idx"]][1],
-                    line=dict(width=2, color='white')
-                )
+        stats_df = pd.DataFrame(agent_stats)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig = px.bar(
+                stats_df,
+                x="Agent",
+                y="Execution Time",
+                color="Model",
+                title="Agent Execution Times"
             )
-            
-            # Create figure
-            fig = go.Figure(data=edge_trace + [node_trace])
-            fig.update_layout(
-                title='Keyword Co-occurrence Network',
-                showlegend=False,
-                hovermode='closest',
-                margin=dict(b=0, l=0, r=0, t=40),
-                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                height=600
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            fig = px.bar(
+                stats_df,
+                x="Agent",
+                y="Tokens",
+                color="Model",
+                title="Token Usage by Agent"
             )
-            
             st.plotly_chart(fig, use_container_width=True)
     
-    # Export word analysis
-    st.markdown("---")
-    if st.button("📥 Export Word Analysis", use_container_width=True):
-        export_data = {
-            "word_frequency": word_freq_df.to_dict('records'),
-            "ngrams": [{"ngram": ng, "frequency": freq} for ng, freq in ngrams],
-            "keywords": st.session_state.keywords,
-            "timestamp": datetime.now().isoformat()
-        }
-        st.download_button(
-            "Download JSON",
-            data=json.dumps(export_data, ensure_ascii=False, indent=2),
-            file_name=f"word_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-            mime="application/json"
-        ) > div > div > input,
-        .stTextArea > div > div > textarea {{
-            background: var(--card-bg);
-            border: 2px solid var(--border);
-            border-radius: 8px;
-            color: var(--text);
-        }}
+    # Document statistics
+    if st.session_state.docs:
+        st.markdown("---")
+        st.markdown("### 📊 Document Statistics")
         
-        .stTextInput
+        doc_types = Counter([doc["type"] for doc in st.session_state.docs])
+        doc_df = pd.DataFrame([
+            {"Type": k.upper(), "Count": v}
+            for k, v in doc_types.items()
+        ])
+        
+        fig = px.pie(
+            doc_df,
+            values="Count",
+            names="Type",
+            title="Document Types Distribution"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+
+if __name__ == "__main__":
+    main()
