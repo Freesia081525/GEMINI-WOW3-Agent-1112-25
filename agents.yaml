@@ -9,7 +9,7 @@ agents:
   
   - name: "文件結構分析師"
     description: "分析文件結構、章節組織和內容層次"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -33,7 +33,7 @@ agents:
   
   - name: "執行摘要生成器"
     description: "生成高層次的執行摘要，提取核心要點"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 1500
     system_prompt: |
@@ -56,7 +56,7 @@ agents:
   
   - name: "技術細節提取器"
     description: "提取技術參數、數據和規格信息"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.0
     max_tokens: 2500
     system_prompt: |
@@ -80,7 +80,7 @@ agents:
   
   - name: "時間軸建構器"
     description: "建立事件時間軸和研究階段圖"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 1800
     system_prompt: |
@@ -103,7 +103,7 @@ agents:
   
   - name: "關鍵詞網絡分析師"
     description: "分析關鍵詞共現和概念關聯網絡"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 2000
     system_prompt: |
@@ -130,7 +130,7 @@ agents:
   
   - name: "藥物資訊整合器"
     description: "整合藥物名稱、成分、適應症等基本信息"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.0
     max_tokens: 2000
     system_prompt: |
@@ -155,7 +155,7 @@ agents:
   
   - name: "臨床試驗設計分析師"
     description: "分析臨床試驗設計、方法學和統計方案"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2500
     system_prompt: |
@@ -180,7 +180,7 @@ agents:
   
   - name: "療效數據分析師"
     description: "分析臨床療效結果和統計顯著性"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.0
     max_tokens: 2500
     system_prompt: |
@@ -205,7 +205,7 @@ agents:
   
   - name: "不良事件偵測器"
     description: "識別和分類不良事件、嚴重度評估"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -230,7 +230,7 @@ agents:
   
   - name: "藥物交互作用分析師"
     description: "識別藥物交互作用、禁忌症和注意事項"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -255,7 +255,7 @@ agents:
   
   - name: "藥物動力學分析師"
     description: "分析 ADME 數據、藥動學參數"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.0
     max_tokens: 2000
     system_prompt: |
@@ -279,7 +279,7 @@ agents:
   
   - name: "生物標記分析師"
     description: "識別和分析生物標記、預測因子"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -308,7 +308,7 @@ agents:
   
   - name: "安全性評估專家"
     description: "綜合評估藥物安全性概況"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2500
     system_prompt: |
@@ -333,7 +333,7 @@ agents:
   
   - name: "風險管理計畫制定者"
     description: "制定風險管理策略和 REMS 計畫"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 2500
     system_prompt: |
@@ -358,7 +358,7 @@ agents:
   
   - name: "信號偵測分析師"
     description: "偵測安全性信號和異常模式"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -383,7 +383,7 @@ agents:
   
   - name: "患者安全監測設計師"
     description: "設計患者安全監測方案"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 2000
     system_prompt: |
@@ -408,7 +408,7 @@ agents:
   
   - name: "藥物警戒報告生成器"
     description: "生成符合法規的藥物警戒報告"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2500
     system_prompt: |
@@ -433,7 +433,7 @@ agents:
   
   - name: "品質缺陷評估專家"
     description: "評估品質問題對患者安全的影響"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -462,7 +462,7 @@ agents:
   
   - name: "法規路徑顧問"
     description: "建議最佳的 FDA 申請路徑和策略"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 2000
     system_prompt: |
@@ -487,7 +487,7 @@ agents:
   
   - name: "法規文件完整性檢查員"
     description: "檢查提交文件的完整性和合規性"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.0
     max_tokens: 2500
     system_prompt: |
@@ -512,7 +512,7 @@ agents:
   
   - name: "CMC 法規分析師"
     description: "分析化學、製造和控制 (CMC) 合規性"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2500
     system_prompt: |
@@ -537,7 +537,7 @@ agents:
   
   - name: "臨床數據包審查員"
     description: "審查臨床數據包的完整性和品質"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2500
     system_prompt: |
@@ -562,7 +562,7 @@ agents:
   
   - name: "標籤內容審查員"
     description: "審查藥品標籤符合 FDA 要求"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -588,7 +588,7 @@ agents:
   
   - name: "回覆完成信準備專家"
     description: "準備對 FDA 問題的完整回覆"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 2500
     system_prompt: |
@@ -613,7 +613,7 @@ agents:
   
   - name: "上市後承諾追蹤器"
     description: "追蹤和管理上市後研究承諾"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -642,7 +642,7 @@ agents:
   
   - name: "趨勢預測分析師"
     description: "分析歷史數據預測未來趨勢"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.3
     max_tokens: 2000
     system_prompt: |
@@ -667,7 +667,7 @@ agents:
   
   - name: "相關性挖掘專家"
     description: "發現數據間的隱藏關聯和相關性"
-    model: "gemini:gemini-1.5-pro"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 2000
     system_prompt: |
@@ -692,7 +692,7 @@ agents:
   
   - name: "異常檢測專家"
     description: "識別數據中的異常值和離群點"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.1
     max_tokens: 2000
     system_prompt: |
@@ -717,7 +717,7 @@ agents:
   
   - name: "文本語義分析師"
     description: "進行深度語義分析和情感挖掘"
-    model: "gemini:gemini-2.0-flash-exp"
+    model: "gemini:gemini-2.5-flash"
     temperature: 0.2
     max_tokens: 2000
     system_prompt: |
