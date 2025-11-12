@@ -1006,6 +1006,678 @@ def main():
 # =============================================================================
 # TAB RENDERERS
 # =============================================================================
+
+def render_documents_tab(T: dict):
+    """Render documents management tab"""
+    st.subheader(T["upload"])
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        uploaded_files = st.file_uploader(
+            T["upload_hint"],
+            type=["pdf", "txt", "md", "csv", "json"],
+            accept_multiple_files=True
+        )
+        
+        if uploaded_files:
+            for file in uploaded_files:
+                doc_id = f"{file.name}_{hash_content(file.name)}_{int(time.time())}"
+                
+                # Check if already added
+                if any(d["id"] == doc_id for d in st.session_state.docs):
+                    continue
+                
+                ext = file.name.lower().split(".")[-1]
+                doc = {
+                    "id": doc_id,
+                    "name": file.name,
+                    "type": ext,
+                    "timestamp": datetime.now().isoformat(),
+                    "content": "",
+                    "pdf_bytes": None,
+                    "images": None
+                }
+                
+                if ext == "pdf":
+                    doc["pdf_bytes"] = file.read()
+                else:
+                    doc["content"] = extract_text_from_file(file)
+                
+                st.session_state.docs.append(doc)
+                st.session_state.metrics["docs_processed"] = len(st.session_state.docs)
+            
+            render_status("success", f"Added {len(uploaded_files)} document(s)")
+    
+    with col2:
+        st.markdown("### 📝 " + T["paste"])
+        paste_text = st.text_area(T["paste"], height=200, key="paste_input")
+        
+        if st.button(T["add_paste"], use_container_width=True):
+            if paste_text.strip():
+                doc_id = f"paste_{hash_content(paste_text)}_{int(time.time())}"
+                doc = {
+                    "id": doc_id,
+                    "name": f"Pasted Text {len(st.session_state.docs)+1}",
+                    "type": "txt",
+                    "timestamp": datetime.now().isoformat(),
+                    "content": paste_text,
+                    "pdf_bytes": None,
+                    "images": None
+                }
+                st.session_state.docs.append(doc)
+                st.session_state.metrics["docs_processed"] = len(st.session_state.docs)
+                render_status("success", "Pasted text added")
+    
+    # Document list
+    st.markdown("---")
+    st.subheader(f"📚 {T['docs']} ({len(st.session_state.docs)})")
+    
+    for idx, doc in enumerate(st.session_state.docs):
+        with st.expander(f"📄 {doc['name']}", expanded=False):
+            col1, col2, col3 = st.columns([3, 1, 1])
+            
+            with col1:
+                st.markdown(f"**Type:** {doc['type'].upper()}")
+                st.markdown(f"**Added:** {doc['timestamp'][:19]}")
+            
+            with col2:
+                if doc["type"] == "pdf" and doc["pdf_bytes"]:
+                    if st.button(T["preview"], key=f"preview_{doc['id']}"):
+                        if doc["images"] is None:
+                            with st.spinner(T["loading"]):
+                                doc["images"] = pdf_to_images(doc["pdf_bytes"])
+                        render_status("success", f"Rendered {len(doc['images'])} pages")
+            
+            with col3:
+                if st.button(T["delete"], key=f"delete_{doc['id']}", type="secondary"):
+                    st.session_state.docs.pop(idx)
+                    st.session_state.metrics["docs_processed"] = len(st.session_state.docs)
+                    st.rerun()
+            
+            # Show content or images
+            if doc["type"] == "pdf" and doc.get("images"):
+                cols = st.columns(4)
+                for i, page_data in enumerate(doc["images"][:8]):  # Show first 8 pages
+                    with cols[i % 4]:
+                        st.image(page_data["image"], caption=f"{T['page']} {page_data['page']}", use_container_width=True)
+            elif doc["content"]:
+                content = st.text_area(
+                    T["edit"],
+                    value=doc["content"],
+                    height=200,
+                    key=f"edit_{doc['id']}"
+                )
+                doc["content"] = content
+
+def render_ocr_tab(T: dict):
+    """Render OCR processing tab"""
+    st.subheader(T["ocr"])
+    
+    pdf_docs = [d for d in st.session_state.docs if d["type"] == "pdf"]
+    
+    if not pdf_docs:
+        st.info("📄 Please upload PDF documents in the Documents tab first")
+        return
+    
+    for doc in pdf_docs:
+        with st.expander(f"📄 {doc['name']}", expanded=True):
+            # Render pages if not done
+            if doc["images"] is None and doc["pdf_bytes"]:
+                if st.button(f"🖼️ Render Pages", key=f"render_{doc['id']}"):
+                    with st.spinner(T["loading"]):
+                        doc["images"] = pdf_to_images(doc["pdf_bytes"])
+                    render_status("success", f"Rendered {len(doc['images'])} pages")
+            
+            if doc.get("images"):
+                # OCR settings
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    ocr_mode = st.radio(
+                        T["ocr_mode"],
+                        [T["ocr_python"], T["ocr_llm"]],
+                        key=f"ocr_mode_{doc['id']}"
+                    )
+                
+                with col2:
+                    ocr_lang = st.selectbox(
+                        T["ocr_lang"],
+                        ["English", "Traditional Chinese"],
+                        index=1 if st.session_state.settings["ocr_language"] == "zh" else 0,
+                        key=f"ocr_lang_{doc['id']}"
+                    )
+                
+                with col3:
+                    if ocr_mode == T["ocr_llm"]:
+                        llm_model = st.selectbox(
+                            "LLM Model",
+                            [
+                                "gemini:gemini-2.5-flash",
+                                "gemini:gemini-2.5-flash-lite",
+                                "openai:gpt-4o-mini",
+                                "openai:gpt-4-turbo"
+                            ],
+                            key=f"llm_model_{doc['id']}"
+                        )
+                
+                # Page selection
+                page_nums = [p["page"] for p in doc["images"]]
+                selected_pages = st.multiselect(
+                    "Select pages for OCR",
+                    page_nums,
+                    default=page_nums[:min(5, len(page_nums))],
+                    key=f"pages_{doc['id']}"
+                )
+                
+                # Run OCR
+                if st.button(T["run_ocr"], key=f"run_ocr_{doc['id']}", type="primary"):
+                    lang_code = "zh" if "Chinese" in ocr_lang else "en"
+                    
+                    with st.status("🔍 Processing OCR...", expanded=True) as status:
+                        start_time = time.time()
+                        router = LLMRouter(
+                            google_key=st.session_state.api_keys["gemini"],
+                            openai_key=st.session_state.api_keys["openai"],
+                            grok_key=st.session_state.api_keys["grok"]
+                        )
+                        
+                        for page_data in doc["images"]:
+                            if page_data["page"] not in selected_pages:
+                                continue
+                            
+                            st.write(f"Processing page {page_data['page']}...")
+                            
+                            if ocr_mode == T["ocr_python"]:
+                                text = python_ocr(
+                                    page_data["image"],
+                                    engine=st.session_state.settings["ocr_engine"],
+                                    language=lang_code
+                                )
+                            else:
+                                provider, model = llm_model.split(":")
+                                prompt = ADVANCED_PROMPTS["ocr"].format(
+                                    language="Traditional Chinese" if lang_code == "zh" else "English"
+                                )
+                                image_bytes = img_to_bytes(page_data["image"])
+                                text = router.ocr_image(provider, model, image_bytes, prompt)
+                            
+                            st.session_state.ocr_results[(doc["id"], page_data["page"])] = text
+                        
+                        elapsed = time.time() - start_time
+                        st.session_state.metrics["pages_ocr"] += len(selected_pages)
+                        st.session_state.metrics["processing_times"].append(elapsed)
+                        
+                        status.update(label="✓ OCR Complete", state="complete")
+                        render_status("success", f"Processed {len(selected_pages)} pages in {elapsed:.2f}s")
+                
+                # Show OCR results
+                if any((doc["id"], p) in st.session_state.ocr_results for p in page_nums):
+                    st.markdown("### OCR Results")
+                    for page_num in selected_pages:
+                        key = (doc["id"], page_num)
+                        if key in st.session_state.ocr_results:
+                            text = st.text_area(
+                                f"{T['page']} {page_num}",
+                                value=st.session_state.ocr_results[key],
+                                height=200,
+                                key=f"ocr_result_{doc['id']}_{page_num}"
+                            )
+                            st.session_state.ocr_results[key] = text
+
+def render_combine_tab(T: dict):
+    """Render combine and analyze tab"""
+    st.subheader(T["combine"])
+    
+    # Build combined document
+    combined_parts = []
+    
+    for doc in st.session_state.docs:
+        if doc["type"] == "pdf":
+            # Collect OCR results
+            ocr_texts = []
+            if doc.get("images"):
+                for page_data in doc["images"]:
+                    key = (doc["id"], page_data["page"])
+                    if key in st.session_state.ocr_results:
+                        ocr_texts.append(f"### {T['page']} {page_data['page']}\n\n{st.session_state.ocr_results[key]}")
+            
+            if ocr_texts:
+                combined_parts.append(f"## {doc['name']}\n\n" + "\n\n".join(ocr_texts))
+        else:
+            if doc["content"]:
+                combined_parts.append(f"## {doc['name']}\n\n{doc['content']}")
+    
+    # Keyword extraction
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        if st.button(T["auto_extract"], use_container_width=True):
+            full_text = "\n\n".join(combined_parts)
+            lang = "zh" if st.session_state.settings["lang"] == "zh-TW" else "en"
+            keywords = extract_keywords_yake(full_text, max_k=30, language=lang)
+            st.session_state.keywords = keywords
+            render_status("success", f"Extracted {len(keywords)} keywords")
+    
+    with col2:
+        if st.button(T["generate_combined"], type="primary", use_container_width=True):
+            combined_text = "\n\n---\n\n".join(combined_parts)
+            
+            # Highlight keywords
+            if st.session_state.keywords:
+                theme_color = FLOWER_THEMES[st.session_state.settings["theme_idx"]][1]
+                combined_text = highlight_keywords(combined_text, st.session_state.keywords, theme_color)
+            
+            st.session_state.combined_doc = combined_text
+            st.session_state.metrics["total_tokens"] = estimate_tokens(combined_text)
+            st.balloons()
+            render_status("success", "Combined document generated")
+    
+    # Show/edit keywords
+    if st.session_state.keywords or st.session_state.combined_doc:
+        st.markdown("### " + T["keywords"])
+        keywords_text = st.text_area(
+            "Edit keywords (one per line)",
+            value="\n".join(st.session_state.keywords),
+            height=150
+        )
+        st.session_state.keywords = [k.strip() for k in keywords_text.split("\n") if k.strip()]
+        
+        # Display as tags
+        if st.session_state.keywords:
+            tags_html = "".join([f"<span class='tag'>{kw}</span>" for kw in st.session_state.keywords[:20]])
+            st.markdown(tags_html, unsafe_allow_html=True)
+    
+    # Display combined document
+    if st.session_state.combined_doc:
+        st.markdown("---")
+        st.markdown("### " + T["combined_doc"])
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        st.markdown(st.session_state.combined_doc, unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Export options
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.download_button(
+                "📥 Download Markdown",
+                data=st.session_state.combined_doc,
+                file_name=f"combined_document_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                mime="text/markdown"
+            )
+
+def render_wordgraph_tab(T: dict):
+    """Render word graph analysis tab"""
+    st.subheader(T["wordgraph"])
+    
+    if not st.session_state.combined_doc:
+        st.info("📝 Please generate a combined document first in the Combine tab")
+        return
+    
+    # Clean text (remove HTML tags)
+    clean_text = re.sub(r'<[^>]+>', '', st.session_state.combined_doc)
+    
+    if not clean_text.strip():
+        st.warning("⚠️ Combined document is empty")
+        return
+    
+    # Analysis options
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        top_n = st.slider("Number of top words", 10, 100, 30)
+    
+    with col2:
+        ngram_size = st.selectbox("N-gram size", [2, 3, 4], index=0)
+    
+    with col3:
+        if st.button("🔄 Refresh Analysis", use_container_width=True):
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Word Frequency Analysis
+    st.markdown("### 📊 " + T["word_freq"])
+    
+    with st.spinner("Analyzing word frequencies..."):
+        word_freq_df = create_word_frequency(clean_text, top_n=top_n)
+    
+    if word_freq_df.empty:
+        st.warning("No words found for analysis")
+        return
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Bar chart
+        fig = px.bar(
+            word_freq_df.head(20),
+            x='Frequency',
+            y='Word',
+            orientation='h',
+            title=f'Top 20 {T["top_words"]}',
+            color='Frequency',
+            color_continuous_scale='Blues'
+        )
+        fig.update_layout(
+            height=600, 
+            showlegend=False,
+            yaxis={'categoryorder':'total ascending'}
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.dataframe(word_freq_df, height=600, use_container_width=True)
+        
+        # Download button
+        csv = word_freq_df.to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            "📥 Download CSV",
+            data=csv,
+            file_name=f"word_freq_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    
+    st.markdown("---")
+    
+    # N-gram Analysis
+    st.markdown(f"### 📈 {T['ngram_analysis']} ({ngram_size}-gram)")
+    
+    with st.spinner(f"Analyzing {ngram_size}-grams..."):
+        ngrams = create_ngrams(clean_text, n=ngram_size, top_k=30)
+    
+    if ngrams:
+        ngram_df = pd.DataFrame(ngrams, columns=['N-gram', 'Frequency'])
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            fig = px.bar(
+                ngram_df.head(20),
+                x='Frequency',
+                y='N-gram',
+                orientation='h',
+                title=f'Top 20 {ngram_size}-grams',
+                color='Frequency',
+                color_continuous_scale='Viridis'
+            )
+            fig.update_layout(
+                height=500,
+                yaxis={'categoryorder':'total ascending'}
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            st.dataframe(ngram_df, height=500, use_container_width=True)
+    else:
+        st.info("No n-grams found")
+    
+    st.markdown("---")
+    
+    # Co-occurrence Network
+    if st.session_state.keywords and len(st.session_state.keywords) > 1:
+        st.markdown("### 🕸️ " + T["co_occurrence"])
+        
+        with st.spinner("Building co-occurrence network..."):
+            # Network settings
+            col1, col2 = st.columns([3, 1])
+            
+            with col2:
+                window_size = st.slider("Window size", 3, 20, 10)
+                min_cooccur = st.slider("Min co-occurrence", 1, 10, 2)
+            
+            cooccur_df = create_cooccurrence_matrix(clean_text, st.session_state.keywords, window=window_size)
+        
+        if not cooccur_df.empty and cooccur_df.shape[0] > 0 and cooccur_df.shape[1] > 0:
+            with col1:
+                # Create network graph
+                edges = []
+                for col in cooccur_df.columns:
+                    for idx in cooccur_df.index:
+                        try:
+                            weight = cooccur_df.loc[idx, col]
+                            if weight >= min_cooccur and col != idx:
+                                edges.append((idx, col, weight))
+                        except:
+                            continue
+                
+                if edges:
+                    # Sort by weight and take top connections
+                    edges.sort(key=lambda x: x[2], reverse=True)
+                    edges = edges[:50]  # Top 50 connections
+                    
+                    # Build node positions (circular layout)
+                    nodes = list(set([e[0] for e in edges] + [e[1] for e in edges]))
+                    n = len(nodes)
+                    
+                    if n > 1:
+                        node_positions = {}
+                        for i, node in enumerate(nodes):
+                            angle = 2 * np.pi * i / n
+                            radius = 1.0
+                            node_positions[node] = (radius * np.cos(angle), radius * np.sin(angle))
+                        
+                        # Create edges traces
+                        edge_traces = []
+                        max_weight = max(e[2] for e in edges)
+                        
+                        for source, target, weight in edges:
+                            if source in node_positions and target in node_positions:
+                                x0, y0 = node_positions[source]
+                                x1, y1 = node_positions[target]
+                                
+                                trace = go.Scatter(
+                                    x=[x0, x1, None],
+                                    y=[y0, y1, None],
+                                    mode='lines',
+                                    line=dict(
+                                        width=max(0.5, (weight/max_weight)*5),
+                                        color='rgba(150,150,150,0.4)'
+                                    ),
+                                    hoverinfo='none',
+                                    showlegend=False
+                                )
+                                edge_traces.append(trace)
+                        
+                        # Create nodes trace
+                        node_x = [node_positions[node][0] for node in nodes]
+                        node_y = [node_positions[node][1] for node in nodes]
+                        
+                        # Calculate node sizes based on total connections
+                        node_connections = {}
+                        for node in nodes:
+                            node_connections[node] = sum(1 for e in edges if node in [e[0], e[1]])
+                        
+                        node_sizes = [10 + node_connections[node] * 3 for node in nodes]
+                        
+                        theme_color = FLOWER_THEMES[st.session_state.settings["theme_idx"]][1]
+                        
+                        node_trace = go.Scatter(
+                            x=node_x,
+                            y=node_y,
+                            mode='markers+text',
+                            text=nodes,
+                            textposition="top center",
+                            textfont=dict(size=10, color='white' if st.session_state.settings["dark_mode"] else 'black'),
+                            hovertext=[f"{node}<br>Connections: {node_connections[node]}" for node in nodes],
+                            hoverinfo='text',
+                            marker=dict(
+                                size=node_sizes,
+                                color=theme_color,
+                                line=dict(width=2, color='white')
+                            ),
+                            showlegend=False
+                        )
+                        
+                        # Create figure
+                        fig = go.Figure(data=edge_traces + [node_trace])
+                        fig.update_layout(
+                            title='Keyword Co-occurrence Network',
+                            showlegend=False,
+                            hovermode='closest',
+                            margin=dict(b=20, l=20, r=20, t=60),
+                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            height=600,
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            paper_bgcolor='rgba(0,0,0,0)'
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Network statistics
+                        st.markdown("**Network Statistics:**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Nodes", len(nodes))
+                        with col2:
+                            st.metric("Edges", len(edges))
+                        with col3:
+                            avg_connections = sum(node_connections.values()) / len(nodes) if nodes else 0
+                            st.metric("Avg Connections", f"{avg_connections:.1f}")
+                    else:
+                        st.info("Not enough nodes for network visualization")
+                else:
+                    st.info(f"No co-occurrences found with minimum threshold of {min_cooccur}")
+            
+            # Show co-occurrence matrix
+            with st.expander("📊 View Co-occurrence Matrix", expanded=False):
+                st.dataframe(cooccur_df, use_container_width=True)
+        else:
+            st.info("No co-occurrence data available. Please ensure keywords are extracted in the Combine tab.")
+    else:
+        st.info("⚠️ Please extract keywords in the Combine tab first (need at least 2 keywords for network analysis)")
+    
+    st.markdown("---")
+    
+    # Word Cloud alternative (text-based)
+    st.markdown("### ☁️ Top Keywords Cloud")
+    
+    if st.session_state.keywords:
+        # Create tag cloud HTML
+        theme_color = FLOWER_THEMES[st.session_state.settings["theme_idx"]][1]
+        
+        # Size keywords by frequency in word_freq_df
+        keyword_sizes = {}
+        for kw in st.session_state.keywords[:30]:
+            kw_lower = kw.lower()
+            match = word_freq_df[word_freq_df['Word'] == kw_lower]
+            if not match.empty:
+                keyword_sizes[kw] = match.iloc[0]['Frequency']
+            else:
+                keyword_sizes[kw] = 1
+        
+        max_freq = max(keyword_sizes.values()) if keyword_sizes else 1
+        
+        tags_html = "<div style='display: flex; flex-wrap: wrap; gap: 10px; padding: 20px; justify-content: center;'>"
+        for kw, freq in sorted(keyword_sizes.items(), key=lambda x: x[1], reverse=True):
+            size = 0.8 + (freq / max_freq) * 1.5  # Scale from 0.8em to 2.3em
+            opacity = 0.6 + (freq / max_freq) * 0.4
+            tags_html += f"""
+                <span style='
+                    font-size: {size}em;
+                    padding: 8px 16px;
+                    background: {theme_color}{int(opacity*100):02x};
+                    color: white;
+                    border-radius: 20px;
+                    font-weight: 600;
+                    display: inline-block;
+                    margin: 5px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                '>
+                    {kw}
+                </span>
+            """
+        tags_html += "</div>"
+        
+        st.markdown(tags_html, unsafe_allow_html=True)
+    else:
+        st.info("No keywords available. Generate combined document and extract keywords first.")
+    
+    st.markdown("---")
+    
+    # Export word analysis
+    st.markdown("### 📥 Export Analysis")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📊 Export Word Analysis", use_container_width=True):
+            export_data = {
+                "timestamp": datetime.now().isoformat(),
+                "document_length": len(clean_text),
+                "total_words": len(re.findall(r'\b\w+\b', clean_text)),
+                "unique_words": len(set(re.findall(r'\b\w+\b', clean_text.lower()))),
+                "word_frequency": word_freq_df.to_dict('records'),
+                "ngrams": [{"ngram": ng, "frequency": freq} for ng, freq in ngrams] if ngrams else [],
+                "keywords": st.session_state.keywords,
+                "top_n": top_n,
+                "ngram_size": ngram_size
+            }
+            
+            json_str = json.dumps(export_data, ensure_ascii=False, indent=2)
+            st.download_button(
+                "Download JSON",
+                data=json_str,
+                file_name=f"word_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+    
+    with col2:
+        # Export all tables as Excel
+        if not word_freq_df.empty:
+            from io import BytesIO
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                word_freq_df.to_excel(writer, sheet_name='Word Frequency', index=False)
+                if ngrams:
+                    pd.DataFrame(ngrams, columns=['N-gram', 'Frequency']).to_excel(
+                        writer, sheet_name=f'{ngram_size}-grams', index=False
+                    )
+                if st.session_state.keywords:
+                    pd.DataFrame({'Keyword': st.session_state.keywords}).to_excel(
+                        writer, sheet_name='Keywords', index=False
+                    )
+            
+            st.download_button(
+                "Download Excel",
+                data=output.getvalue(),
+                file_name=f"word_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+    
+    with col3:
+        # Export visualization report
+        if st.button("📄 Generate Report", use_container_width=True):
+            report = f"""# Word Graph Analysis Report
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+## Document Statistics
+- Total Characters: {len(clean_text):,}
+- Total Words: {len(re.findall(r'\\b\\w+\\b', clean_text)):,}
+- Unique Words: {len(set(re.findall(r'\\b\\w+\\b', clean_text.lower()))):,}
+
+## Top {min(20, len(word_freq_df))} Words
+{word_freq_df.head(20).to_markdown(index=False)}
+
+## Top {min(20, len(ngrams) if ngrams else 0)} {ngram_size}-grams
+{pd.DataFrame(ngrams[:20] if ngrams else [], columns=['N-gram', 'Frequency']).to_markdown(index=False) if ngrams else 'No data'}
+
+## Keywords
+{', '.join(st.session_state.keywords[:30]) if st.session_state.keywords else 'No keywords extracted'}
+"""
+            
+            st.download_button(
+                "Download Markdown",
+                data=report,
+                file_name=f"word_analysis_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+
 def render_agents_tab(T: dict):
     """Render agent workflows tab"""
     st.subheader(T["agents"])
